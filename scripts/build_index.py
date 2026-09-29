@@ -1,4 +1,17 @@
-<!DOCTYPE html>
+#!/usr/bin/env python3
+"""Regenera el index.html de la raíz con un enlace a cada carpeta que tenga su propio index.html.
+
+El texto de cada enlace sale del <title> de la política de esa carpeta
+(sin los prefijos/sufijos "Privacy Policy"). Si no hay <title>, usa el nombre de la carpeta.
+"""
+import html
+import re
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+EXCLUDED = {"scripts"}
+
+PAGE = """<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -58,10 +71,44 @@
 <h1>Privacy Policies</h1>
 <p class="intro">Privacy policies for the apps published by Zanaxú Apps.</p>
 <ul>
-<li><a href="denomination-counter/">Denomination Counter</a></li>
-<li><a href="estampitas-2026/">Estampitas Mundial 2026</a></li>
-<li><a href="privacy-policy-generator/">Privacy Policy Generator</a></li>
+{items}
 </ul>
 </main>
 </body>
 </html>
+"""
+
+
+def display_name(folder: Path) -> str:
+    text = (folder / "index.html").read_text(encoding="utf-8", errors="replace")
+    match = re.search(r"<title>(.*?)</title>", text, re.S | re.I)
+    if not match:
+        return folder.name
+    title = html.unescape(match.group(1)).strip()
+    title = re.sub(r"^\s*Privacy Policy\s*[-–—:]\s*", "", title, flags=re.I)
+    title = re.sub(r"\s*[-–—:]\s*Privacy Policy\s*$", "", title, flags=re.I)
+    return title.strip() or folder.name
+
+
+def main() -> None:
+    folders = sorted(
+        (d for d in ROOT.iterdir()
+         if d.is_dir() and not d.name.startswith(".") and d.name not in EXCLUDED
+         and (d / "index.html").is_file()),
+        key=lambda d: d.name.lower(),
+    )
+    items = "\n".join(
+        f'<li><a href="{html.escape(d.name)}/">{html.escape(display_name(d), quote=False)}</a></li>'
+        for d in folders
+    )
+    content = PAGE.replace("{items}", items)
+    target = ROOT / "index.html"
+    if target.exists() and target.read_text(encoding="utf-8") == content:
+        print("index.html ya está actualizado.")
+        return
+    target.write_text(content, encoding="utf-8", newline="\n")
+    print(f"index.html regenerado con {len(folders)} política(s).")
+
+
+if __name__ == "__main__":
+    main()
